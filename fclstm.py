@@ -21,13 +21,18 @@ class LSTMForecast(nn.Module):
 
         self.lstm = nn.LSTM(13 * 8 * 32, hidden_dim, num_layers=3, batch_first=True)
 
-        self.output_meo_size = cnst.BJ_HEIGHT * cnst.BJ_WIDTH * 5
+        self.output_meo_size = cnst.BJ_HEIGHT * cnst.BJ_WIDTH * 11
         self.output_aqi_size = cnst.BJ_NUM_AQI_STATIONS * 6
         self.output_meo = nn.Linear(hidden_dim, self.output_meo_size)
         self.output_aqi = nn.Linear(hidden_dim, self.output_aqi_size)
 
-    def forward(self, x):
+    def forward(self, x, hidden=None):
         m, Tx, n_c, n_h, n_w = x.shape
+
+        if hidden:
+            self.hidden = hidden
+        else:
+            self.hidden = self.init_hidden()
 
         x = x.view(Tx * m, n_c, n_h, n_w)
 
@@ -38,7 +43,10 @@ class LSTMForecast(nn.Module):
 
         lstm_out, self.hidden = self.lstm(x, self.hidden)
         meo = self.output_meo(lstm_out)
+        meo = meo.view(m, Tx, n_c, n_h, n_w)
+
         aqi = self.output_aqi(lstm_out)
+        aqi = aqi.view(m, Tx, 210)
 
         return torch.cat((meo, aqi), -1)
 

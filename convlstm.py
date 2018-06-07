@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import global_consts as cnst
-from load_data import loadBeijingAqiStationLocations
+from load_data import load_bj_aqi_station_locations
 
 
 class ConvLSTM(nn.Module):
@@ -31,9 +31,73 @@ class ConvLSTM(nn.Module):
         self.n_c = input_channel
         self.hidden_channel = hidden_channel
 
-        self.conv = nn.Conv2d(
-            self.n_c + self.hidden_channel,
-            4 * self.hidden_channel,  # ifog gates
+        self.conv_xi = nn.Conv2d(
+            self.n_c,
+            self.hidden_channel,
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
+        )
+
+        self.conv_xf = nn.Conv2d(
+            self.n_c,
+            self.hidden_channel,
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
+        )
+
+        self.conv_xo = nn.Conv2d(
+            self.n_c,
+            self.hidden_channel,
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
+        )
+
+        self.conv_xg = nn.Conv2d(
+            self.n_c,
+            self.hidden_channel,
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
+        )
+
+        self.conv_hi = nn.Conv2d(
+            self.hidden_channel,
+            self.hidden_channel,
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
+        )
+
+        self.conv_hf = nn.Conv2d(
+            self.hidden_channel,
+            self.hidden_channel,
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
+        )
+
+        self.conv_ho = nn.Conv2d(
+            self.hidden_channel,
+            self.hidden_channel,
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
+        )
+
+        self.conv_hg = nn.Conv2d(
+            self.hidden_channel,
+            self.hidden_channel,
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
+        )
+
+        self.conv_hi = nn.Conv2d(
+            self.hidden_channel,
+            self.hidden_channel,
             kernel_size=kernel_size,
             stride=stride,
             padding=padding,
@@ -51,15 +115,19 @@ class ConvLSTM(nn.Module):
 
         hidden_state, cell_state = hidden_states
 
-        input_hidden_tensor = torch.cat([x, hidden_state], dim=1)
+        xi = self.conv_xi(x)
+        hi = self.conv_hi(hidden_state)
+        xf = self.conv_xf(x)
+        hf = self.conv_hf(hidden_state)
+        xo = self.conv_xo(x)
+        ho = self.conv_ho(hidden_state)
+        xg = self.conv_xg(x)
+        hg = self.conv_hg(hidden_state)
 
-        conv_res = self.conv(input_hidden_tensor)
-        ker_i, ker_f, ker_o, ker_g = torch.split(conv_res, self.hidden_channel, dim=1)
-
-        i = torch.sigmoid(ker_i)
-        f = torch.sigmoid(ker_f)
-        o = torch.sigmoid(ker_o)
-        g = torch.tanh(ker_g)
+        i = torch.sigmoid(xi + hi)
+        f = torch.sigmoid(xf + hf)
+        o = torch.sigmoid(xo + ho)
+        g = torch.tanh(xg + hg)
 
         cell_state = f * cell_state + i * g
         hidden_state = o * torch.tanh(cell_state)
@@ -72,7 +140,7 @@ class ConvLSTM(nn.Module):
 
 
 class ConvLSTMForecast(nn.Module):
-    def __init__(self, input_size):
+    def __init__(self, input_size, hidden_dim, kernel_size, padding):
         """
         Init function.
 
@@ -87,40 +155,41 @@ class ConvLSTMForecast(nn.Module):
         self.convlstm1 = ConvLSTM(
             input_size,
             11,
-            64,
-            kernel_size=5,
+            hidden_dim,  # 128
+            kernel_size=kernel_size,
             stride=1,
-            padding=2,
+            padding=padding,
         )
 
         self.convlstm2 = ConvLSTM(
             input_size,
-            64,
-            128,
-            kernel_size=5,
+            hidden_dim,
+            hidden_dim,
+            kernel_size=kernel_size,
             stride=1,
-            padding=2,
+            padding=padding,
         )
 
         self.convlstm3 = ConvLSTM(
             input_size,
-            128,
-            128,
-            kernel_size=5,
+            hidden_dim,
+            hidden_dim,
+            kernel_size=kernel_size,
             stride=1,
-            padding=2,
+            padding=padding,
         )
 
         (self.hidden1, self.cell1), (self.hidden2, self.cell2), (self.hidden3, self.cell3) = \
             self.init_hidden(10)
 
-        self.conv_meo = nn.Conv2d(128, 5, 1)  # The final meo prediction layer
+        self.meo_conv_1 = nn.Conv2d(hidden_dim, hidden_dim, 1)
+        self.meo_conv_output = nn.Conv2d(hidden_dim, 11, 1)  # The final meo prediction layer
 
-        self.aqi_fc_1 = nn.Linear(128 * (self.pred_box_w ** 2), 256)
+        self.aqi_fc_1 = nn.Linear(hidden_dim * (self.pred_box_w ** 2), 256)
         self.aqi_fc_output = nn.Linear(256, 6)
 
         # find close cells related to AQI stations
-        station_loc = loadBeijingAqiStationLocations()
+        station_loc = load_bj_aqi_station_locations()
         self.station_order = sorted(station_loc.keys())
         self.station_locs = []  # top left y, x position
 
@@ -137,32 +206,39 @@ class ConvLSTMForecast(nn.Module):
 
             self.station_locs.append((y, x))
 
-    def forward(self, X):
+    def forward(self, X, hidden_states=None):
         m, Tx, n_c, n_h, n_w = X.shape
 
         meo_output = []
         aqi_output = []
 
-        (self.hidden1, cell1), (self.hidden2, cell2), (self.hidden3, cell3) = \
-            self.init_hidden(m)
+        if hidden_states:
+            (self.hidden1, self.cell1), (self.hidden2, self.cell2), (self.hidden3, self.cell3) = \
+                hidden_states
+        else:
+            (self.hidden1, self.cell1), (self.hidden2, self.cell2), (self.hidden3, self.cell3) = \
+                self.init_hidden(m)
 
         for t in range(Tx):
             xt = X[:, t, :, :, :]
-            self.hidden1, cell1 = self.convlstm1(xt, (self.hidden1, cell1))
-            self.hidden2, cell2 = self.convlstm2(self.hidden1, (self.hidden2, cell2))
-            self.hidden3, cell3 = self.convlstm3(self.hidden2, (self.hidden3, cell3))
+            self.hidden1, self.cell1 = self.convlstm1(xt, (self.hidden1, self.cell1))
+            # self.hidden2, self.cell2 = self.convlstm2(self.hidden1, (self.hidden2, self.cell2))
+            self.hidden3, self.cell3 = self.convlstm3(self.hidden1, (self.hidden3, self.cell3))  #######
 
             # MEO prediction
-            meo_pred = self.conv_meo(self.hidden3)
-            meo_pred = meo_pred.view(m, 1, 5 * n_h * n_w)
+            meo_pred = torch.tanh(self.meo_conv_1(self.hidden3))
+            meo_pred = self.meo_conv_output(meo_pred)
+            meo_pred = meo_pred.view(m, 1, 11, n_h, n_w)
             meo_output.append(meo_pred)
 
             # AQI prediction
             aqi_preds = []
 
             for (y, x) in self.station_locs:
-                cells = self.hidden3[:, :, y:y+self.pred_box_w, x:x+self.pred_box_w].contiguous().view(m, -1)
-                cells = F.tanh(self.aqi_fc_1(cells))
+                cells = \
+                    self.hidden3[:, :, y:y+self.pred_box_w, x:x+self.pred_box_w]\
+                        .contiguous().view(m, -1)
+                cells = torch.tanh(self.aqi_fc_1(cells))
                 aqi = self.aqi_fc_output(cells)
                 aqi_preds.append(aqi.view(m, 1, 6))
 
@@ -173,7 +249,9 @@ class ConvLSTMForecast(nn.Module):
         meo_output = torch.cat(meo_output, dim=1)
         aqi_output = torch.cat(aqi_output, dim=1)
 
-        return aqi_output, meo_output
+        hidden_states = (self.hidden1, self.cell1), (self.hidden2, self.cell2), (self.hidden3, self.cell3)
+
+        return aqi_output, meo_output, hidden_states
 
     def init_hidden(self, batch_size):
         return self.convlstm1.init_hidden(batch_size),\
