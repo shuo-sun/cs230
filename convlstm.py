@@ -222,8 +222,8 @@ class ConvLSTMForecast(nn.Module):
         for t in range(Tx):
             xt = X[:, t, :, :, :]
             self.hidden1, self.cell1 = self.convlstm1(xt, (self.hidden1, self.cell1))
-            # self.hidden2, self.cell2 = self.convlstm2(self.hidden1, (self.hidden2, self.cell2))
-            self.hidden3, self.cell3 = self.convlstm3(self.hidden1, (self.hidden3, self.cell3))  #######
+            self.hidden2, self.cell2 = self.convlstm2(self.hidden1, (self.hidden2, self.cell2))
+            self.hidden3, self.cell3 = self.convlstm3(self.hidden2, (self.hidden3, self.cell3))
 
             # MEO prediction
             meo_pred = torch.tanh(self.meo_conv_1(self.hidden3))
@@ -231,18 +231,19 @@ class ConvLSTMForecast(nn.Module):
             meo_pred = meo_pred.view(m, 1, 11, n_h, n_w)
             meo_output.append(meo_pred)
 
-            # AQI prediction
-            aqi_preds = []
-
+            cell_list = []
             for (y, x) in self.station_locs:
                 cells = \
                     self.hidden3[:, :, y:y+self.pred_box_w, x:x+self.pred_box_w]\
-                        .contiguous().view(m, -1)
-                cells = torch.tanh(self.aqi_fc_1(cells))
-                aqi = self.aqi_fc_output(cells)
-                aqi_preds.append(aqi.view(m, 1, 6))
+                        .contiguous().view(m, 1, -1)
+                cell_list.append(cells)
+                
+            num_stations = len(cell_list)
+            cells = torch.cat(cell_list, dim=1).view(m * num_stations, -1)
+            cells = torch.tanh(self.aqi_fc_1(cells))
+            aqi = self.aqi_fc_output(cells)
+            aqi_stations = aqi.view(m, 1, num_stations * 6)
 
-            aqi_stations = torch.cat(aqi_preds, dim=-1)  # concat all stations into one vector
             aqi_output.append(aqi_stations)
 
         # cat on time dimension

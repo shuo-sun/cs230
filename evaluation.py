@@ -134,7 +134,6 @@ def get_aqi_seq_norm(input_aqi_seq):
 
 
 def feed_model_data(model, grid_data_seq):
-    # print(grid_data_seq.shape)
     hidden_states = None
 
     _, _, hidden_states = model(grid_data_seq, hidden_states)

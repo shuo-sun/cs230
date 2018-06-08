@@ -5,6 +5,7 @@ import torch.optim as optim
 import load_data as ld
 import convlstm as md
 import evaluation as ev
+import copy
 
 device = torch.device('cuda')
 
@@ -127,8 +128,7 @@ def train(
         dev_smape = ev.compute_overall_smape(model, smape_grid_ts_data, smape_target_aqi_seqs, smape_invalid_rows)
         print('Epoch: {}, average loss: {}, dev loss: {}, dev smape: {}'.format(epoch, loss, dev_loss, dev_smape))
 
-        snapshots.append((model.state_dict(), loss, dev_loss, dev_smape))
-
-    print('Loss: {}'.format(loss))
+        snapshots.append((copy.deepcopy(model.state_dict()), loss, dev_loss, dev_smape))
+        torch.save(model.state_dict(), 'models/3x3-3_{}.md'.format(dev_loss))
 
     return model
