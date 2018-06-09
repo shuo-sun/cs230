@@ -16,7 +16,7 @@ def get_seqs():
     return grid_datas[0], aqi_datas[0]
 
 
-def train_fclstm(grid_seqs, aqi_seqs, hidden_size=1024, learning_rate=0.05):
+def train_fclstm(grid_seqs, aqi_seqs, hidden_size=1024, learning_rate=0.01):
     model = LSTMForecast(hidden_size, 10).cuda()
     loss_function = nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), learning_rate)

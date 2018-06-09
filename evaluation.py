@@ -163,6 +163,7 @@ def compute_smape_score(target_seq, forecast_seq, invalid_rows, avg, std):
     for i in target_seq:
         target = target_seq[i]
         forecast = forecast_seq[i] * std + avg
+        forecast = np.clip(forecast, 0, None)
         invalids = invalid_rows[i]
 
         mask = np.array([True] * 35)
