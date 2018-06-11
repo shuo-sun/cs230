@@ -139,7 +139,7 @@ class ConvLSTM(nn.Module):
                 torch.zeros(batch_size, self.hidden_channel, self.n_h, self.n_w).cuda())
 
 
-class ConvLSTMForecast(nn.Module):
+class ConvLSTMForecast3L(nn.Module):
     def __init__(self, input_size, hidden_dim, kernel_size, padding):
         """
         Init function.
@@ -147,7 +147,7 @@ class ConvLSTMForecast(nn.Module):
         :param input_size: (int, int): input h, w
         """
 
-        super(ConvLSTMForecast, self).__init__()
+        super(ConvLSTMForecast3L, self).__init__()
 
         self.pred_box_size = 1  # prediction looks at 2 * 1 + 1 box
         self.pred_box_w = 2 * self.pred_box_size + 1
@@ -185,8 +185,8 @@ class ConvLSTMForecast(nn.Module):
         self.meo_conv_1 = nn.Conv2d(hidden_dim, hidden_dim, 1)
         self.meo_conv_output = nn.Conv2d(hidden_dim, 11, 1)  # The final meo prediction layer
 
-        self.aqi_fc_1 = nn.Linear(hidden_dim * (self.pred_box_w ** 2), 256)
-        self.aqi_fc_output = nn.Linear(256, 6)
+        self.aqi_conv_1 = nn.Conv2d(hidden_dim, hidden_dim, 3)
+        self.aqi_fc_output = nn.Linear(hidden_dim, 6)
 
         # find close cells related to AQI stations
         station_loc = load_bj_aqi_station_locations()
@@ -233,14 +233,13 @@ class ConvLSTMForecast(nn.Module):
 
             cell_list = []
             for (y, x) in self.station_locs:
-                cells = \
-                    self.hidden3[:, :, y:y+self.pred_box_w, x:x+self.pred_box_w]\
-                        .contiguous().view(m, 1, -1)
-                cell_list.append(cells)
-                
+                cells = self.aqi_conv_1(
+                    self.hidden2[:, :, y:y + self.pred_box_w, x:x + self.pred_box_w])
+                cell_list.append(cells.view(m, 1, -1))
+
             num_stations = len(cell_list)
             cells = torch.cat(cell_list, dim=1).view(m * num_stations, -1)
-            cells = torch.tanh(self.aqi_fc_1(cells))
+            cells = torch.tanh(cells)
             aqi = self.aqi_fc_output(cells)
             aqi_stations = aqi.view(m, 1, num_stations * 6)
 
@@ -262,13 +261,7 @@ class ConvLSTMForecast(nn.Module):
 
 class ConvLSTMForecast2L(nn.Module):
     def __init__(self, input_size, hidden_dim, kernel_size, padding):
-        """
-        Init function.
-
-        :param input_size: (int, int): input h, w
-        """
-
-        super(ConvLSTMForecast2L, self).__init__()
+        super(ConvLSTMForecast2LConv, self).__init__()
 
         self.pred_box_size = 1  # prediction looks at 2 * 1 + 1 box
         self.pred_box_w = 2 * self.pred_box_size + 1
@@ -296,7 +289,7 @@ class ConvLSTMForecast2L(nn.Module):
         self.meo_conv_1 = nn.Conv2d(hidden_dim, hidden_dim, 1)
         self.meo_conv_output = nn.Conv2d(hidden_dim, 11, 1)  # The final meo prediction layer
 
-        self.aqi_fc_1 = nn.Linear(hidden_dim * (self.pred_box_w ** 2), hidden_dim)
+        self.aqi_conv_1 = nn.Conv2d(hidden_dim, hidden_dim, 3)
         self.aqi_fc_output = nn.Linear(hidden_dim, 6)
 
         # find close cells related to AQI stations
@@ -341,14 +334,13 @@ class ConvLSTMForecast2L(nn.Module):
 
             cell_list = []
             for (y, x) in self.station_locs:
-                cells = \
-                    self.hidden2[:, :, y:y + self.pred_box_w, x:x + self.pred_box_w] \
-                        .contiguous().view(m, 1, -1)
-                cell_list.append(cells)
+                cells = self.aqi_conv_1(
+                    self.hidden2[:, :, y:y + self.pred_box_w, x:x + self.pred_box_w])
+                cell_list.append(cells.view(m, 1, -1))
 
             num_stations = len(cell_list)
             cells = torch.cat(cell_list, dim=1).view(m * num_stations, -1)
-            cells = torch.tanh(self.aqi_fc_1(cells))
+            cells = torch.tanh(cells)
             aqi = self.aqi_fc_output(cells)
             aqi_stations = aqi.view(m, 1, num_stations * 6)
 

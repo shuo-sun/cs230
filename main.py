@@ -20,7 +20,7 @@ def main():
     dev_grid_ts_data, _ = ld.load_dev_full_data()
     dev_target_aqi_ts, invalid_rows = ld.load_dev_aqi_data_vec()
 
-    model = md.ConvLSTMForecast((21, 31), 256, 5, 2).cuda()
+    model = md.ConvLSTMForecast2L((21, 31), 256, 3, 1).cuda()
     snapshots = []
 
     model = tr.train(
@@ -30,12 +30,6 @@ def main():
     model = tr.train(
         model, input_seqs, target_meo_seqs, target_aqi_seqs, dev_input_seqs, dev_target_meo_seqs, dev_target_aqi_seqs,
         dev_grid_ts_data, dev_target_aqi_ts, invalid_rows, snapshots, iterations=10, lr=0.001)
-
-    for i in range(len(snapshots)):
-        m, tl, dl, smape = snapshots[i]
-        torch.save(m.state_dict(), 'models/convlstm_5x5-256-256-fc-lnr_epoch_{}.md'.format(i))
-
-        snapshots = []  # release memory
 
     # Test data
     test_grid_seqs, test_aqi_seqs = ld.load_batch_test_seq_data()
@@ -63,6 +57,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-# 0.4738
-

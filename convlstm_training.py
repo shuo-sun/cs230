@@ -111,9 +111,7 @@ def train(
             loss_aqi = loss_function(aqi_forecasts, target_aqi)
             loss_meo = loss_function(meo_forecasts, target_meo)
 
-            # The main training objective is aqi. Therefore, we adjust the ratio to let aqi
-            # weights more (5:1).
-            loss = loss_aqi + loss_meo / 5
+            loss = loss_aqi + loss_meo
             loss.backward()
 
             losses.append(loss.data)
@@ -132,6 +130,6 @@ def train(
         # snapshots.append((copy.deepcopy(model.state_dict()), loss, dev_loss, dev_smape))
         # Use the following two lines if GPU memory is limited
         snapshots.append((loss, dev_loss, dev_smape))
-        torch.save(model.state_dict(), 'models/3x3-2-512_{}.md'.format(dev_loss))
+        torch.save(model.state_dict(), 'models/3x3-2-256-2loss_{}.md'.format(dev_loss))
 
     return model

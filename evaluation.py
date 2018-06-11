@@ -1,9 +1,6 @@
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.optim as optim
-import load_data as ld
-import convlstm as md
 
 device = torch.device('cuda')
 
@@ -101,7 +98,8 @@ def compute_overall_smape(model, grid_ts_data, target_aqi_seqs, invalid_rows):
             )
 
             model, hidden_states = feed_model_data(model, normalized_input_tensor)
-            aqi_forecasts = generate_forecasts(model, hidden_states, normalized_init_tensor)
+            aqi_forecasts, meo_forecasts = generate_forecasts(model, hidden_states, normalized_init_tensor)
+
             smape_score = \
                 compute_smape_score(target_seq, aqi_forecasts, invalid_target_seq, aqi_avg, aqi_std)
             smape_scores.append(smape_score)
@@ -118,6 +116,7 @@ def normalize_input_seq(input_seq):
 
     avg = np.reshape(avg, (1, n_c, 1, 1))
     std = np.reshape(std, (1, n_c, 1, 1))
+    print("avg: {}, std: {}".format(avg, std))
 
     return (input_seq - avg) / std
 
@@ -145,13 +144,15 @@ def feed_model_data(model, grid_data_seq):
 def generate_forecasts(model, hidden_states, init_grid_data, seq_len=48):
     prev_grid = init_grid_data
     aqi_forecasts = {}
+    meo_forecasts = {}
 
     for i in range(seq_len):
         aqi_forecast, prev_grid, hidden_states = model(prev_grid, hidden_states)
 
         aqi_forecasts[i] = aqi_forecast.cpu().numpy()
+        meo_forecasts[i] = prev_grid.cpu().numpy()
 
-    return aqi_forecasts
+    return aqi_forecasts, meo_forecasts
 
 
 def compute_smape_score(target_seq, forecast_seq, invalid_rows, avg, std):
